@@ -59,58 +59,74 @@ def audio():
     unique = str(uuid.uuid4())[:8]
     out_template = os.path.join(tmp_dir, f"yt_{vid}_{unique}.%(ext)s")
 
-    try:
-        cmd = [
-            'yt-dlp',
-            '-f', '140/251/bestaudio[ext=m4a]/bestaudio',
-            '-o', out_template,
-            '--no-playlist',
-            '--force-overwrites',
-            '--no-continue',
-            '--no-cache-dir',
-            f'https://www.youtube.com/watch?v={vid}'
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+    # Try multiple format selectors
+    formats = [
+        '140/251/bestaudio[ext=m4a]/bestaudio',
+        'bestaudio',
+        'best'
+    ]
 
-        created = None
-        for f in os.listdir(tmp_dir):
-            if f.startswith(f"yt_{vid}_{unique}"):
-                created = os.path.join(tmp_dir, f)
-                break
+    created = None
+    size = 0
+    last_error = ""
 
-        size = os.path.getsize(created) if created and os.path.exists(created) else 0
-        if result.returncode != 0 or not created or size < 10000:
-            print("Échec:", result.stderr[-500:] if result.stderr else "")
-            if created:
-                try: os.unlink(created)
-                except: pass
-            return Response('Impossible de récupérer cette vidéo', 404)
+    for fmt in formats:
+        try:
+            cmd = [
+                'yt-dlp',
+                '-f', fmt,
+                '-o', out_template,
+                '--no-playlist',
+                '--force-overwrites',
+                '--no-continue',
+                '--no-cache-dir',
+                '--extractor-args', 'youtube:player_client=android',
+                f'https://www.youtube.com/watch?v={vid}'
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            
+            for f in os.listdir(tmp_dir):
+                if f.startswith(f"yt_{vid}_{unique}"):
+                    created = os.path.join(tmp_dir, f)
+                    break
+            
+            if created and os.path.exists(created):
+                size = os.path.getsize(created)
+                if size > 10000:
+                    break
+                else:
+                    try: os.unlink(created)
+                    except: pass
+                    created = None
+            last_error = result.stderr[-300:] if result.stderr else "no output"
+        except Exception as e:
+            last_error = str(e)
+            continue
 
-        def generate():
-            with open(created, 'rb') as f:
-                while True:
-                    chunk = f.read(32768)
-                    if not chunk:
-                        break
-                    yield chunk
-            try:
-                os.unlink(created)
-            except:
-                pass
+    if not created or size < 10000:
+        print("Échec final:", last_error)
+        return Response('Impossible de récupérer cette vidéo', 404)
 
-        headers = {
-            'Content-Length': str(size),
-            'Accept-Ranges': 'bytes',
-            'Cache-Control': 'no-store',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-            'Access-Control-Allow-Headers': '*',
-            'Content-Type': 'audio/mp4'
-        }
-        return Response(generate(), headers=headers)
-    except Exception as e:
-        print("Erreur:", e)
-        return Response('Erreur serveur', 500)
+    def generate():
+        with open(created, 'rb') as f:
+            while True:
+                chunk = f.read(32768)
+                if not chunk:
+                    break
+                yield chunk
+        try:
+            os.unlink(created)
+        except:
+            pass
+
+    headers = {
+        'Content-Length': str(size),
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'no-store',
+        'Access-Control-Allow-Origin': '*',
+        'Content-Type': 'audio/mp4'
+    }
+    return Response(generate(), headers=headers)
 
 @app.route('/')
 def index():
