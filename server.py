@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""
-Musique Ruben - Serveur YouTube audio
-Compatible Render / Railway / VPS
-"""
 import os
 import re
 import subprocess
@@ -12,7 +8,7 @@ from flask import Flask, request, Response, jsonify
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 PORT = int(os.environ.get("PORT", 5000))
 
@@ -102,12 +98,16 @@ def audio():
             except:
                 pass
 
-        return Response(generate(), content_type='audio/mp4', headers={
+        headers = {
             'Content-Length': str(size),
             'Accept-Ranges': 'bytes',
             'Cache-Control': 'no-store',
-            'Access-Control-Allow-Origin': '*'
-        })
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+            'Access-Control-Allow-Headers': '*',
+            'Content-Type': 'audio/mp4'
+        }
+        return Response(generate(), headers=headers)
     except Exception as e:
         print("Erreur:", e)
         return Response('Erreur serveur', 500)
@@ -117,5 +117,5 @@ def index():
     return "Musique Ruben API OK"
 
 if __name__ == '__main__':
-    print(f"Serveur Musique Ruben sur le port {PORT}")
+    print(f"Serveur sur le port {PORT}")
     app.run(host='0.0.0.0', port=PORT, debug=False, threaded=True)
